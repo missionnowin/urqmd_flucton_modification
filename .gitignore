@@ -1,0 +1,11 @@
+obj_*/
+*.o
+urqmd.x86_64
+*.dat
+testrun/
+test.f13
+test.f14
+test.f15
+test.f16
+test.f19
+test.f20
