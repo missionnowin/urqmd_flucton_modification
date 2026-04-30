@@ -69,7 +69,7 @@ Modification list:
     early-returns with sigma=0 -> collision rejected -> flucton propagates
     untouched until anndec fires.
 
-5. debug: soft-guard crossx against io<=0 / io>67 to identify bad caller
+6. debug: soft-guard crossx against io<=0 / io>67 to identify bad caller
     Replace unconditional STOP 137 with a diagnostic print + sig=0 return.
     This prevents the hard crash on Au+Au and gives us ityp/iso3/e of the
     particle pair reaching crossx with a bad iline, which is needed to
@@ -81,7 +81,7 @@ Modification list:
     Files touched:
         * make22.f    
 
-6. fix: out-of-bounds write to mstring(3) in F+N->NNN breakup (io=67)
+7. fix: out-of-bounds write to mstring(3) in F+N->NNN breakup (io=67)
     mstring is declared real*8 mstring(2) in newpart.f - it carries only TWO string masses, not per-particle masses. The prior io=67 code wrote
     mstring(i) for i=1..3 which triggered gfortran's:
 
@@ -98,7 +98,7 @@ Modification list:
     Files touched:
     * make22.f  
 
-7. fix: flucton charge + trim class 16 exit channels
+8. fix: flucton charge + trim class 16 exit channels
     1) fchg(i3, 71) returned 1 instead of 2 for a pp-cluster flucton.
         The generic Q = (I3 + B - S + C)/2 formula assumes baryon number
         B=1, but the flucton is a di-baryon (B=2). Added a dedicated
@@ -123,7 +123,7 @@ Modification list:
     Files touched:
     * blockres.f
 
-7. fix: prevent crashes from unphysical iso3 propagation after flucton breakup
+9. fix: prevent crashes from unphysical iso3 propagation after flucton breakup
     After the flucton (ityp=71, pp-cluster) breaks up via F+N -> N+N+N or
     decays, downstream collision/decay machinery occasionally inherits an
     out-of-range 2*I3 value (|iz|=3) for ordinary N* / Delta resonances.
@@ -147,7 +147,7 @@ Modification list:
         to level 1 (warning) and return pdgid=0; the output writer can
         still emit the record without aborting the whole run.
 
-8. feat(flucton): realistic F+N breakup via 2-step cascade (step A: quasi-elastic F+N->N_s+F*; step B: isotropic F*->NN with p*~0.35 GeV/c)
+10. feat: realistic F+N breakup via 2-step cascade (step A: quasi-elastic F+N->N_s+F*; step B: isotropic F*->NN with p*~0.35 GeV/c)
     - Replace isotropic 3-body phase-space in make22.f io=67 with
     physically-motivated cascade implemented in new fluc_breakup
     subroutine (appended to make22.f).
@@ -168,7 +168,7 @@ Modification list:
     * angdis.f
     * make22.f
 
-9. fix: flucton charge/baryon conservation + prevent PYTHIA crashes
+11. fix: flucton charge/baryon conservation + prevent PYTHIA crashes
     Root causes of the 23/500 early-abort rate and the B=408, Q=172 excess in Au+Au runs at ecm=8 GeV:
 
     1. Donor double-counting in cascinit.f
@@ -204,7 +204,7 @@ Modification list:
     * make22.f
     * upmerge.f
 
-10. fix: avoid NaN in donor-photon output by setting tiny non-zero 4-momentum
+12. fix: avoid NaN in donor-photon output by setting tiny non-zero 4-momentum
     f14 output had ~14 NaN-bearing rows per event, one per
     parked-donor photon.  
 
