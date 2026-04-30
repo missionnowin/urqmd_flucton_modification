@@ -96,8 +96,33 @@ c      write(6,*) 'id and iso ',id1,iso31,id2,iso32
       kfpro=pdgid(id1,iso31)
       kftar=pdgid(id2,iso32)
 
+c Guard against pdgid returning 0 (unknown ityp/iso3 combination).
+c hepnam(0,...) yields an empty string, and the subsequent PYINIT would
+c abort the whole run with  'Error: unrecognized (beam|target) particle'.
+c Zero out the PYTHIA output arrays so the caller's pythflag=1 does not
+c try to read garbage, and bail early.  This is a last-resort safety
+c net; the pre-filter in make22 should have caught these already.
+      if(kfpro.eq.0.or.kftar.eq.0)then
+         write(6,*)
+     &    '*** upyth: skipping PYTHIA -- invalid PDG id'
+         write(6,*) '    (id1,iso31,id2,iso32) =',id1,iso31,id2,iso32
+         nstring1=0
+         nstring2=0
+         return
+      endif
+
       call hepnam(kfpro,chaup_pro)
       call hepnam(kftar,chaup_tar)
+
+c Extra paranoia: if either name came back empty, also skip.
+      if(chaup_pro(1:1).eq.' '.or.chaup_tar(1:1).eq.' ')then
+         write(6,*)
+     &    '*** upyth: skipping PYTHIA -- empty HEPNAM string'
+         nstring1=0
+         nstring2=0
+         return
+      endif
+
 ccccccccccccccccccc section 3: call PYTHIA cccccccccccccccccccccccccccccccc
 
 c      write(6,*) 'calling pythia with ',chaup_pro,chaup_tar,sqrts

@@ -1,0 +1,33 @@
+# this is a sample input file for urqmd
+# Comment here
+# Ap Zp
+pro 197 79 # projectile ( here : Au )
+# optional : special projectile : ityp , iso3 ( here : pi plus meson )
+# 
+# At proton
+tar 197 79 # target ( here : Au ) 
+
+nev 500 # number of events
+tim 200 0.05 # time to propagate and output time− interval ( in fm / c )
+
+# ecm 7000.0 # center-of-mass energy sqrt(S_nn)
+# ene 2.5
+ene 8 # 11.0 # 2.8651974522292996
+
+IMP 0 5
+# bmin = 0
+# bmax = 9.6
+# imp -1 # weighted impact parameter distribution ( from 0−3 fm )
+eos 0 # Equation of State ( used in transport part ) : CASCADE mode
+# some options and parameters
+cto 4 1    # output of initialization
+cto 27 1   # output in lab_frame
+ctp 1 1.d0 # scaling for decay width of Resonances
+# f15        # no output to file 1 5
+f13
+f14
+f15
+f16
+f20
+# end of file
+xxx

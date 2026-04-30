@@ -18,7 +18,7 @@ cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
       integer iso3
 
       integer tab_size
-      parameter (TAB_SIZE = 181)
+      parameter (TAB_SIZE = 184)
 
       logical anti
       integer abs_ityp
@@ -90,6 +90,8 @@ c Omega
      .      69,  0,  3334,
 c  Lambda_C
      .      70,  0,  4122,
+c flucton
+     .      71, -2, 9902110,   71,  0, 9902210,   71,  2, 9902220,
 c gamma
      .     100,  0,    22, 
 c pion
@@ -245,7 +247,11 @@ cl check if we found the correct values in IDTAB
             pdgid = idtab(3,next)
          endif
       else
-         call error ('pdgid','Error in tablelookup',dble(next),3)
+c[flucton patch] Demote fatal abort to a warning and return pdgid=0 so that
+c unphysical (ityp,iso3) combinations leaking through after a flucton
+c breakup do not kill the run.  The output stage may then emit '0' for
+c the affected particle's PDG code instead of crashing.
+         call error ('pdgid','Error in tablelookup',dble(next),1)
          pdgid = 0
       endif
       
@@ -344,8 +350,8 @@ cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
      .     'X(1950)',
      .     'X(2030)',
      .     'Omega',
-     .     'LambdaC'/
-     
+     .     'LambdaC',
+     .     'Flucton'/
 
       data meson_names/
      .     'gamma',

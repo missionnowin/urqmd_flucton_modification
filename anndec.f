@@ -114,6 +114,13 @@ C        Check if second particle is baryon
 C        (with zero amount of netstrangeness) ?
 C        e.g. pion-nucleon case
 C 
+c Flucton formation from meson-baryon is not physical; skip to
+c prevent branres/branbs1 crashes if a flucton appears as i2.
+      else if(is.eq.0.and.iabs(i2).ge.minfluc
+     &        .and.iabs(i2).le.maxfluc)then
+         sig=0d0
+         gam=0d0
+         return
       else if(is.eq.0.and.iabs(i2).le.maxbar)then
 c... (anti-)N*,D*
 c         write(*,*)"anndec", gam
@@ -157,6 +164,13 @@ c
          if(iabs(i1).ge.minmes)then ! meson dec. 
             call anndex(1,m1,i1,iz1,m2,i2,iz2,sqrts,sig,gam,
      .           maxbrm ,minmes+1,maxmes,bmtype,branmes)
+
+
+         else if(iabs(i1).ge.minfluc.and.iabs(i1).le.maxfluc)then
+c Flucton decay: F -> N+N (dominant) or F -> N+N+pi (subleading).
+c Uses its own branching tables bftype / branfluc.
+            call anndex(1,m1,i1,iz1,m2,i2,iz2,sqrts,sig,gam,
+     .           maxbrf,minfluc,maxfluc,bftype,branfluc)
 
 
          else if(is.eq.0)then   ! n*,d,d*
@@ -259,6 +273,16 @@ csab: needed for antibaryon-meson scattering symmetry fix:
       iz1=iiz1
       iz2=iiz2
 
+c[flucton patch] defensive: if the decaying particle's iso3 exceeds its
+c total isospin (can happen if an earlier stage propagated an unphysical
+c iz from a flucton-breakup intermediate), clamp to a valid value.
+c This prevents anndex(dec) from aborting with `stop 137`.
+      if(io.eq.1.and.iabs(iz1).gt.isoit(iabs(i1)))then
+         write(6,*)'anndex(dec): clamp unphysical iz1 for ityp=',i1,
+     &              ' iz1(in)=',iz1,' 2I=',isoit(iabs(i1))
+         iz1=isign(isoit(iabs(i1)),iz1)
+      endif
+
       if(io.eq.1)then
 C
 C
@@ -292,7 +316,13 @@ c... find out branch = i
             write(6,*)'please check minimal masses: m1,m1min,m2min'
             write(6,*)'and iso3 of decaying particle'
             write(6,*)(prob(j),j=0,maxbr)
-            stop 137
+c[flucton patch] graceful fallback: instead of aborting, mark the
+c decay as impossible (nexit=0) and return. The caller will treat
+c the particle as non-decayed for this time step.
+            nexit=0
+            sig=0.d0
+            gam=0.d0
+            return
          end if
 
 c... get itypes and set number of outgoing particles, prepare final state

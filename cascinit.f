@@ -8,9 +8,12 @@ c $Id: cascinit.f,v 1.13 2005/03/24 16:46:58 bleicher Exp $
       include 'inputs.f'
 
       integer Z,A,i,getspin,fchg,ZZ,AA,antia, j,k, nrjc,izcnt,nucleus
-      real*8 R,P,R2,ranf,sint,phi,nucrad,cost,drr
+      integer fluction_max_n, fluction_cnt, ii, jj, kk, att_cnt
+      real*8 R,P,R2,ranf,sint,phi,nucrad,cost,drr,randd
       real*8 xcm,ycm,zcm,pxcm,pycm,pzcm,densnorm,add,avd,ws
       real*8 r_long, r_short, rdef, ratio, alpha
+      real*8 pfx, pfy, pfz, efl, m2fl, xfl, yfl, zfl
+      logical is_fluction_paired(300)
 c
 c mass correction according to binding energy
       real*8 meff,mindist
@@ -223,6 +226,119 @@ c         endif
      &                    +PT_pz(i,nucleus)**2+PT_fmass(i,nucleus)**2)
  2    continue
 c end of CM-correction
+
+c inject fluctons
+      if (nucleus .eq. 1) then
+         fluction_max_n = 7
+      elseif (nucleus .eq. 2) then
+         fluction_max_n = 7
+      else
+         fluction_max_n = 0
+      endif
+
+      fluction_cnt = 0
+      do ii = 1,300
+         is_fluction_paired(ii) = .false.
+      enddo
+
+      do kk = 1, fluction_max_n
+         do ii = 1, Z
+            if (.not. is_fluction_paired(ii)) then
+               do att_cnt = 1, 20
+                  randd = ranf(0)
+                  jj = 1 + int(randd*dble(Z))
+                  if (jj.gt.Z) jj = Z
+
+                  if (ii.ne.jj .and.
+     &                .not. is_fluction_paired(jj) .and.
+     &                abs(ii-jj).le.5) then
+
+c midpoint in coordinate space
+                     xfl = 0.5d0*(PT_rx(jj,nucleus)+PT_rx(ii,nucleus))
+                     yfl = 0.5d0*(PT_ry(jj,nucleus)+PT_ry(ii,nucleus))
+                     zfl = 0.5d0*(PT_rz(jj,nucleus)+PT_rz(ii,nucleus))
+
+c summed 3-momentum
+                     pfx = PT_px(jj,nucleus) + PT_px(ii,nucleus)
+                     pfy = PT_py(jj,nucleus) + PT_py(ii,nucleus)
+                     pfz = PT_pz(jj,nucleus) + PT_pz(ii,nucleus)
+
+c summed energy
+                     efl = PT_p0(jj,nucleus) + PT_p0(ii,nucleus)
+
+c invariant mass from total four-momentum
+                     m2fl = efl**2 - pfx**2 - pfy**2 - pfz**2
+                     if (m2fl .lt. 0.d0) m2fl = 0.d0
+
+c write flucton into survivor slot jj
+                     PT_rx(jj,nucleus) = xfl
+                     PT_ry(jj,nucleus) = yfl
+                     PT_rz(jj,nucleus) = zfl
+
+                     PT_px(jj,nucleus) = pfx
+                     PT_py(jj,nucleus) = pfy
+                     PT_pz(jj,nucleus) = pfz
+
+                     PT_ityp(jj,nucleus) = 71*antia
+                     PT_iso3(jj,nucleus) = PT_iso3(jj,nucleus)
+     &                                      + PT_iso3(ii,nucleus)
+                     PT_charge(jj,nucleus) = PT_charge(jj,nucleus)
+     &                                      + PT_charge(ii,nucleus)
+
+                     PT_fmass(jj,nucleus) = sqrt(m2fl)
+                     PT_p0(jj,nucleus)    = efl
+
+c Remove donor completely from the active set.  Because UrQMD does not
+c support shrinking the particle array without cascading re-index work
+c across the cascade, we instead turn the donor slot into a PARKED,
+c INERT, NEUTRAL photon (ityp=100, minmes).  Photons have:
+c    massmes(100) = 0   charge = 0   baryon = 0   iso3 = 0
+c and UrQMD's cascade / collision search uses geometric distance, so
+c parking it at rx=-10000 fm guarantees it never interacts.  This is
+c critical: if we left the donor as a nucleon with the original
+c iso3/charge, the analysis tool would double-count its baryon number
+c and electric charge, because the flucton (jj slot) already absorbed
+c them (observed: BCharge = 394..408 and ECharge = 158..172 in Au+Au,
+c with the excess scaling exactly as fluction_cnt).
+c Photon is its own antiparticle so don't multiply by antia.
+                     PT_ityp(ii,nucleus)   = 100
+                     PT_iso3(ii,nucleus)   = 0
+                     PT_charge(ii,nucleus) = 0
+                     PT_spin(ii,nucleus)   = 0
+                     PT_fmass(ii,nucleus)  = 0.d0
+c Give the parked photon a tiny but NON-ZERO forward 4-momentum.  If we
+c leave all four components at exactly zero, the output stage computes
+c quantities like sqrt(p0**2 - m**2) or rapidity = 0.5*log((E+pz)/(E-pz))
+c which produces NaN for (0,0,0,0).  A 1e-12 GeV photon is 24 orders of
+c magnitude below any physical scale in the simulation and contributes
+c nothing to conservation sums at any meaningful precision.
+                     PT_px(ii,nucleus) = 0.d0
+                     PT_py(ii,nucleus) = 0.d0
+                     PT_pz(ii,nucleus) = 1.d-12
+                     PT_p0(ii,nucleus) = 1.d-12
+                     PT_rx(ii,nucleus) = -10000.d0
+                     PT_ry(ii,nucleus) = 0.d0
+                     PT_rz(ii,nucleus) = 0.d0
+
+                     is_fluction_paired(ii) = .true.
+                     is_fluction_paired(jj) = .true.
+                     fluction_cnt = fluction_cnt + 1
+                     goto 701
+                  endif
+               enddo
+            endif
+ 701        continue
+            if (fluction_cnt .ge. fluction_max_n) goto 702
+         enddo
+ 702     continue
+         if (fluction_cnt .ge. fluction_max_n) goto 703
+      enddo
+ 703  continue
+
+      if (fluction_cnt .gt. 0) then
+         write(6,*) '*** Created ', fluction_cnt,
+     &              ' fluctons in nucleus'
+      endif
 
       return
       end
@@ -522,5 +638,4 @@ cc        write (*,*)
 cc      endif
       return
       END
-
 

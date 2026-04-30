@@ -68,6 +68,8 @@ c.. pythia particle list
 c.. Needed for strangeness exchange process
       integer channel
       integer dummy
+c.. flucton-N breakup (channel 67) isospin bookkeeping
+      integer itot_q,nprot
       real*8 rdummy
       real*8 sig1,sig2,sig3,sig4
       real*8 STREXCHANGE
@@ -111,7 +113,8 @@ c      if(i1+i2.gt.2)write(6,*)'make22:',i1,i2
       goto(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,9,17,9,17,20,
      , 9,13,23,15,12,26,27,15,14,100,29,100,14,15,14,36,36,13,14,
      , 13,41,42,43,44,45,46,47,48,49,50,51,52,53,54,
-     , 13,56,57,58,59,60,61,62,63,64)io
+     , 13,56,57,58,59,60,61,62,63,64,
+     , 65,66,67)io
       
       write(6,*)'make22: unknown channel requested io:',io 
       write(6,*)'  ',e,i1,iz1,m1,i2,iz2,m2
@@ -425,6 +428,20 @@ c check whether particle type can be handled by PYTHIA
          if(i2.eq.pytlist(i)) itag2=1
  123  continue
 
+c Extra safety net: refuse to call PYTHIA if either particle's iso3 is
+c outside the physical range for its ityp.  Nucleon/Delta: |iz|<=3;
+c mesons: |iz|<=2.  Corrupt iso3 values (e.g. from mis-assignment in a
+c multi-body exit channel) would cause hepnam() to return an empty
+c string and PYINIT would STOP the run with 'unrecognized beam/target
+c particle'.  Also refuse PYTHIA for any flucton, which has no PYTHIA
+c template.
+      if(iabs(i1).le.maxdel.and.iabs(iz1).gt.3)itag1=0
+      if(iabs(i2).le.maxdel.and.iabs(iz2).gt.3)itag2=0
+      if(iabs(i1).ge.minmes.and.iabs(iz1).gt.2)itag1=0
+      if(iabs(i2).ge.minmes.and.iabs(iz2).gt.2)itag2=0
+      if(iabs(i1).ge.minfluc.and.iabs(i1).le.maxfluc)itag1=0
+      if(iabs(i2).ge.minfluc.and.iabs(i2).le.maxfluc)itag2=0
+
 c pythia for high energies 
       
       if(e.gt.minsrt.and.itag0.eq.1.and.itag1.eq.1.and.itag2.eq.1
@@ -718,6 +735,11 @@ c forward time-delay
          itypnew(2)=ityptd(2,pslot(1))
          i3new(2)=iso3td(2,pslot(1))
       endif
+
+c[flucton patch] guard: if anndec returned nexit=0 (no valid decay
+c channel for the input iso3/mass), skip this decay step rather than
+c attempting an n-body decay with no products.
+      if(nexit.eq.0) return
 
       if(nexit.eq.2) then
          i3=itypnew(1)
@@ -3093,6 +3115,135 @@ c aXi- + an -> aSigma0  + aSigma+
 cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 
 
+ 65   continue
+c ===== Flucton-N total (no outgoing channel produced here) =====
+c When collclass=16 selects the total line via siglookup(13), UrQMD
+c still needs exit ids.  Default: elastic-like (flucton + N stays in).
+      i3=i1
+      i4=i2
+      iz3=iz1
+      iz4=iz2
+      m3=m1
+      m4=m2
+      if(m3.lt.mminit(i3)) m3=mminit(i3)
+      if(m4.lt.mminit(i4)) m4=mminit(i4)
+      goto 2001
+
+ 66   continue
+c ===== Flucton-N ELASTIC =====
+c Outgoing: same flucton + same nucleon, masses preserved.
+      if(switips)then
+         call swpizm(i1,iz1,m1,i2,iz2,m2)
+         switips=.false.
+      endif
+      call setizm(i1,iz1,m1,i2,iz2,m2,i3,iz3,m3,i4,iz4,m4)
+      if(mminit(i4)+mminit(i3).gt.e)then
+         write(6,*)'make22(F+N el): threshold violated'
+         write(6,*)'m3:',m3,mminit(i3)
+         write(6,*)'m4:',m4,mminit(i4)
+      endif
+      if(m3.lt.mminit(i3)) m3=mminit(i3)
+      if(m4.lt.mminit(i4)) m4=mminit(i4)
+      goto 2001
+
+ 67   continue
+c ===== Flucton + N BREAKUP : F + N -> N + N + N =====
+c
+c Physically-motivated cumulative-production kinematics, implemented
+c as a 2-step cascade in the F+N CM frame (filled by fluc_breakup):
+c
+c   Step A  (quasi-elastic scattering of the bombarding nucleon)
+c     F + N  ->  N_s  +  F*  ,   with F* carrying mass m_F and
+c     momentum p_A back-to-back with the struck nucleon N_s.
+c     N_s is placed along +z and F* along -z in the F+N CM; the
+c     final overall orientation of the (N_s, F*) axis in the NN
+c     frame is then set by angdisnew via iline=67 (mapped in
+c     angdis.f to iline=4: Mao forward-backward peripheral),
+c     mimicking the soft-Pomeron-like exchange that dominates
+c     F-N scattering at sqrt(s)~3 GeV.
+c
+c   Step B  (flucton disintegration)
+c     F*  ->  N_1 + N_2  back-to-back with  p* = sqrt(m_F^2/4 - m_N^2)
+c     in the F* rest frame, angle isotropic.  The two nucleons are
+c     then boosted to the F+N CM frame using F*'s momentum -p_A.
+c
+c This reproduces the well-known backward-hemisphere enhancement of
+c cumulative nucleons: in the lab, the struck nucleon N_s carries most
+c of the forward momentum while the two decay nucleons can acquire
+c p_z < 0 when -p* beats the boost from p_A, i.e. whenever
+c |p_A|/gamma_F* <~ p*.  Since p_A ~ 0.5-1 GeV/c in typical F+N
+c scatterings at ene=8 AGeV and p* ~ 0.35 GeV/c, a sizeable fraction
+c of decay nucleons ends up with backward momenta.
+c
+c For reference see Frankfurt-Strikman (Phys.Rept. 76, 215 (1981))
+c and Egiyan et al., Phys.Rev.C 68, 014313 (2003).
+c
+      if(e.le.3.d0*massit(minnuc)+1.d-4)then
+c Threshold violated: degrade to elastic
+         call setizm(i1,iz1,m1,i2,iz2,m2,i3,iz3,m3,i4,iz4,m4)
+         goto 2001
+      endif
+c Three outgoing nucleons (ids, masses, iso3).  The flucton = pp pair
+c breaks into the two "intrinsic" nucleons (slots 1 and 2) plus the
+c bombarding nucleon N_s (slot 3).
+      nstring1=1
+      nstring2=2
+      nexit=3
+      itypnew(1)=isign(minnuc,ii1)
+      itypnew(2)=isign(minnuc,ii1)
+      itypnew(3)=isign(minnuc,ii2)
+c Isospin-3 assignment (UrQMD 2*I3 convention: nucleon iz in {-1,+1}).
+c Flucton is a di-nucleon cluster so iz(F) in {-2,0,+2}.  For F+N breakup
+c total 2*I3 = iz1+iz2 must be shared among three nucleons, each carrying
+c +/-1.  Determine the proton count:
+c    np - nn = iz1+iz2  and  np + nn = 3   =>   np = (3 + q)/2
+c where q = iz1+iz2.  The flucton iz is even, target nucleon iz is odd,
+c so q is odd and (3+q)/2 is always an integer.  The old code used
+c   i3new(1)=i3new(2)=sign(1,iz1)  with an adjust-the-last-one fix-up,
+c which for e.g. iz1=+2, iz2=+1 produced i3new(3)=+4 (unphysical),
+c triggering  anndex(dec): clamp unphysical iz1  and downstream  pdgid
+c tablelookup warnings, eventually aborting the whole run via PYINIT.
+      itot_q=iz1+iz2
+      nprot=(3+itot_q)/2
+      if(nprot.lt.0)nprot=0
+      if(nprot.gt.3)nprot=3
+      do i=1,3
+         if(i.le.nprot)then
+            i3new(i)=+1
+         else
+            i3new(i)=-1
+         endif
+      enddo
+c For antibaryon case, flip iso3 signs (antiproton has iz=-1 in UrQMD).
+      if(ii1.lt.0)then
+         do i=1,3
+            i3new(i)=-i3new(i)
+         enddo
+      endif
+c Final sanity check.  This must hold by construction; fall back to
+c elastic if not (should never fire).
+      if(i3new(1)+i3new(2)+i3new(3).ne.itot_q)then
+         call setizm(i1,iz1,m1,i2,iz2,m2,i3,iz3,m3,i4,iz4,m4)
+         goto 2001
+      endif
+      do i=1,nexit
+         pnew(5,i)=massit(iabs(itypnew(i)))
+         do j=1,4
+            pnew(j,i)=0d0
+            xnew(j,i)=0d0
+         enddo
+      enddo
+
+c Fill pnew(1..4, 1..3) with the 2-step cascade kinematics in the
+c F+N CM frame.  m_F is kept at the flucton's current mass m1
+c (elastic-like); the bombarding nucleon stays on shell.
+      call fluc_breakup(e,m1,m2)
+
+      mstring(1)=pnew(5,1)
+      mstring(2)=pnew(5,2)+pnew(5,3)
+      return
+
+
  1008 continue
 c...get isospin-3 components
 
@@ -4298,11 +4449,26 @@ c     JS no Lambda_c scattering yet
       endif
 
 
+c Guard against io=0 / io out of range BEFORE the computed goto.
+c A computed goto with index 0 or > label-count falls through and
+c hits the STOP 137 below. Historically a handful of call sites
+c (e.g. detailed-balance partials with iline<0, or sigmaLN rows
+c whose 'total' slot is 0) can reach here with io=0. Treat those
+c as zero cross section rather than aborting the whole run.
+      if(io.le.0.or.io.gt.67)then
+         write(6,*)'cross[x,z]: io out of range, returning sig=0.',
+     &             ' iio=',iio,' i1=',ii1,' iz1=',iiz1,
+     &             ' i2=',ii2,' iz2=',iiz2,' e=',e
+         sig=0.d0
+         return
+      endif
+
       goto(1,1,1,1,1,1,1,8,9,10,
      ,       11,12,13,14,15,16,17,18,19,9,21,22,23,24,
      ,       25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,
      ,       40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,
-     ,       55,56,57,58,59,60,61,62,63,64)io
+     ,       55,56,57,58,59,60,61,62,63,64,
+     ,       65,66,67)io
 
 
       write(6,*)'cross[x,z]: ',
@@ -6199,6 +6365,40 @@ c Xi + N -> Lambda/Sigma + Lambda/Sigma
       sig=STREXWrapper(io,e,i1,iz1,i2,iz2)
       return
 
+ 65   continue
+c ===== Flucton + N total cross section =====
+c Uses the tabulated flucton-N total (sigmainf line 13, sigmas line 13).
+c The tabulation is performed as a function of sqrt(s).
+      sig=siglookup(13,e)
+      if(sig.lt.0.d0) sig=0.d0
+      return
+
+ 66   continue
+c ===== Flucton + N ELASTIC cross section =====
+c Uses sigmainf line 14, sigmas line 14.
+      sig=siglookup(14,e)
+      if(sig.lt.0.d0) sig=0.d0
+c make elastic smoothly vanish below kinematic threshold
+      if(e.le.massit(minfluc)+massit(minnuc)+1.d-3)then
+         sig=0.d0
+      endif
+      return
+
+ 67   continue
+c ===== Flucton + N BREAKUP cross section =====
+c F + N -> N + N + N (3-body).  sigmainf line 15, sigmas line 15.
+c This is the cumulative-production channel: the flucton's two
+c internal nucleons are released with large back-to-back internal
+c momentum, so after the Lorentz boost from flucton rest frame
+c some fraction populates the backward hemisphere.
+      sig=siglookup(15,e)
+      if(sig.lt.0.d0) sig=0.d0
+c threshold = 3 m_N
+      if(e.le.3.d0*massit(minnuc)+1.d-3)then
+         sig=0.d0
+      endif
+      return
+
  99   continue
 c...single diffr. pp
       sig=.68*(1.+36/e**2)*log(0.6+0.1*e**2)
@@ -7783,3 +7983,105 @@ c aXi+ + an -> aSigma0  + aSigma+
       STREXWrapper=sig
       return
       end function
+
+CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+      subroutine fluc_breakup(e,mf,mn)
+c
+c Fills newpart/pnew(1..4, 1..3) with a physically-motivated 2-step
+c cascade for flucton+nucleon breakup F + N -> N + N + N:
+c
+c   Step A (F+N CM frame):  F + N  ->  N_s(slot 3)  +  F*(virtual)
+c      p_A = pcms(e, mf, mn).  N_s placed along +z, F* along -z.
+c
+c   Step B (F* rest frame):  F*  ->  N_1(slot 1) + N_2(slot 2)
+c      back-to-back with p* = sqrt(mf^2/4 - m_N^2), isotropic.
+c      Boost N_1, N_2 from F* rest frame to F+N CM using F*'s
+c      velocity (-p_A/E_F*).
+c
+c After this routine returns, scatfinal will:
+c   (i)  rigidly rotate pnew(1..3, 1..nexit) by (ctheta1,phi1) from
+c        angdisnew (for iline=67 -> Mao forward-backward, iline=4)
+c   (ii) boost by (betax,betay,betaz) to the computational frame.
+c
+c Reference: Frankfurt & Strikman, Phys.Rept. 76, 215 (1981);
+c            Egiyan et al., Phys.Rev.C 68, 014313 (2003).
+c
+CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+      implicit none
+      include 'newpart.f'
+
+      real*8 e, mf, mn
+      real*8 pa, pstar, efstar
+      real*8 costh, sinth, phi, cosph, sinph
+      real*8 px1, py1, pz1, e1
+      real*8 gamma, betagf
+      real*8 ranf, pcms
+      real*8 pi
+      parameter (pi = 3.14159265358979312d0)
+
+c ---- Step A: F+N CM magnitudes ----
+      pa = pcms(e, mf, mn)
+      if (pa.le.0d0) then
+c Threshold degeneracy: give everyone zero 3-momentum (safe fallback).
+         pnew(1,1) = 0d0
+         pnew(2,1) = 0d0
+         pnew(3,1) = 0d0
+         pnew(4,1) = pnew(5,1)
+         pnew(1,2) = 0d0
+         pnew(2,2) = 0d0
+         pnew(3,2) = 0d0
+         pnew(4,2) = pnew(5,2)
+         pnew(1,3) = 0d0
+         pnew(2,3) = 0d0
+         pnew(3,3) = 0d0
+         pnew(4,3) = pnew(5,3)
+         return
+      endif
+
+c Struck (scattered) nucleon N_s at slot 3: along +z in F+N CM.
+      pnew(1,3) = 0d0
+      pnew(2,3) = 0d0
+      pnew(3,3) = +pa
+      pnew(4,3) = sqrt(pnew(5,3)**2 + pa*pa)
+
+c F* energy in F+N CM; its 3-momentum is -p_A along +z (= -p_A z_hat).
+      efstar = sqrt(mf*mf + pa*pa)
+c gamma and beta*gamma of F* w.r.t. F+N CM, along -z direction.
+      gamma  = efstar / mf
+      betagf = -pa / mf   ! = (-pa)/mf ; beta*gamma = p/m
+
+c ---- Step B: isotropic F* -> N_1 + N_2 in F* rest frame ----
+      pstar = sqrt( max(mf*mf/4d0 - pnew(5,1)*pnew(5,1), 0d0) )
+      costh = 1d0 - 2d0*ranf(0)
+      sinth = sqrt( max(1d0 - costh*costh, 0d0) )
+      phi   = 2d0*pi*ranf(0)
+      cosph = cos(phi)
+      sinph = sin(phi)
+
+c N_1 (slot 1) in F* rest frame
+      px1 = pstar * sinth * cosph
+      py1 = pstar * sinth * sinph
+      pz1 = pstar * costh
+      e1  = sqrt(pnew(5,1)*pnew(5,1) + pstar*pstar)
+
+c Boost N_1 from F* rest frame (F* moving along -z in F+N CM) to
+c the F+N CM frame.  For a boost along -z with speed beta>0:
+c    pz_lab = gamma*( pz_rest + beta*(-1)*E_rest )
+c    E_lab  = gamma*( E_rest  + beta*(-1)*pz_rest )
+c Using beta*gamma = betagf (here betagf<0 already encodes -z):
+c    pz_lab = gamma*pz_rest + betagf*E_rest
+c    E_lab  = gamma*E_rest  + betagf*pz_rest
+      pnew(1,1) = px1
+      pnew(2,1) = py1
+      pnew(3,1) = gamma*pz1 + betagf*e1
+      pnew(4,1) = gamma*e1  + betagf*pz1
+
+c N_2 (slot 2): opposite 3-momentum in F* rest frame.
+      pnew(1,2) = -px1
+      pnew(2,2) = -py1
+      pnew(3,2) = gamma*(-pz1) + betagf*e1
+      pnew(4,2) = gamma*e1     + betagf*(-pz1)
+
+      return
+      end
+CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC

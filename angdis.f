@@ -21,7 +21,7 @@ cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
       real*8 sqrts, m1, m2, costh, costhcoll, phi, ranf, pi, s
       real*8 anginter,dumx
       integer iline
-      logical symlog(64)
+      logical symlog(67)
 
       integer pythflag
       common /pythflag/ pythflag
@@ -33,7 +33,9 @@ c this data statements may be changed ...
       data symlog /11*.true., 2*.false., 1*.true., 1*.false., 
      &              5*.true., 8*.false.,
      &              7*.true., 2*.false., 1*.true., 1*.true.,
-     &              25*.true./
+     &              25*.true.,
+c iline 65 (F+F elastic), 66 (F+N elastic), 67 (F+N breakup):
+     &              3*.true./
 
 
       s = sqrts*sqrts
@@ -47,7 +49,9 @@ c ISO-FB interpolation for MB iline 26/27/28
      &     12,12, 4, 4, 4, 9, 9, 4, 9,11,
      &     11,11,11,11,11,11,11,11,11,11,
      &     11,11,11,11,11,11,11,11,11,11,
-     &     4,4, 4, 4) abs(iline)
+c iline 65 (F+F elastic -> iso), 66 (F+N elastic -> Mao F/B),
+c iline 67 (F+N breakup -> Mao F/B for step-A rotation)
+     &     4,4, 4, 4, 9, 4, 4) abs(iline)
 
 
 c JS  include small isentropic cross section for N+N going to resonance
