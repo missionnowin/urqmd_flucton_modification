@@ -1,9 +1,11 @@
 Modification list:
 1. Added primitive flucton - pp: 2m, 2p
+
     Files touched:
     * cascinit.f
 
 2. Defined new baryon named flucton (compact p+p cluster)
+
     Files touched:
     * blockres.f
     * comres.f
@@ -11,6 +13,7 @@ Modification list:
     * itrp2pdg.f
 
 3. Defined new collision class
+
     Files touched:
     * collclass.f
 
@@ -51,11 +54,11 @@ Modification list:
     Root cause: scatter.f calls collclass() to pick the sigmaLN row, then blindly dereferences SigmaLn(1,1,isigline) - but when collclass returns 0 (e.g. F+F, F+Delta, F+meson, any pair we haven't parametrised), that read is out of bounds. nCh ends up whatever garbage sits in memory before row 1, the subsequent iline read lands on a 0, and crossx/crossz is entered with io=0 -> STOP. coload f already has this guard; scatter.f did not.
 
     Fixes:
-    - scatter.f (main body, after collclass call): if isigline.le.0, zero
+    1) scatter.f (main body, after collclass call): if isigline.le.0, zero
         the sigma(0..maxpsig) array and return. Matches the coload.f guard
         'if (isigline.eq.0) return' that was always there.
 
-    - scatter.f::collclass: replace the narrow 'F+F -> 0' rule with a
+    2) scatter.f::collclass: replace the narrow 'F+F -> 0' rule with a
         catch-all 'flucton in either slot AND the F+N rule above did not
         fire -> 0'. Covers F+F, F+Delta, F+N*, F+Y, F+antibaryon, F+meson,
         F+charmonium. Physically: no flucton-X parametrisation except F+N
@@ -97,21 +100,18 @@ Modification list:
 
 7. fix: flucton charge + trim class 16 exit channels
     1) fchg(i3, 71) returned 1 instead of 2 for a pp-cluster flucton.
-    The generic Q = (I3 + B - S + C)/2 formula assumes baryon number
-    B=1, but the flucton is a di-baryon (B=2). Added a dedicated
-    branch in blockres.f:fchg that uses B=2 for fluctons so that a
-    flucton with 2*I3 = +2 gets Q = +2.
+        The generic Q = (I3 + B - S + C)/2 formula assumes baryon number
+        B=1, but the flucton is a di-baryon (B=2). Added a dedicated
+        branch in blockres.f:fchg that uses B=2 for fluctons so that a
+        flucton with 2*I3 = +2 gets Q = +2.
 
-    Before the fix, every flucton collision/decay triggered a
-    charge-conservation warning because ocharge (computed from the
-    buggy fchg) disagreed with ncharge (computed correctly from the
-    outgoing nucleons).
+        Every flucton collision/decay triggered a
+        charge-conservation warning because ocharge (computed from the
+        buggy fchg) disagreed with ncharge (computed correctly from the
+        outgoing nucleons).
 
-    2) sigmaLN for class 16 had nCh=3 but only two real channels
-    (66 = elastic, 67 = breakup). The third slot was a placeholder
-    zero for a not-yet-implemented F+N -> F*+N excitation; scatter.f
-    looped over all nCh slots and called crossx with iline=0,
-    producing the "io out of range" warning spam. Set nCh=2.
+    2) sigmaLN for class 16 had nCh=3 but only two real channels (66 = elastic, 67 = breakup). 
+        The third slot was a placeholder zero for a not-yet-implemented F+N -> F*+N excitation; scatter.f looped over all nCh slots and called crossx with iline=0, producing the "io out of range" warning spam. Set nCh=2.
 
     Result on 2-event Au+Au 8AGeV test:
     - io-out-of-range warnings gone
@@ -169,36 +169,35 @@ Modification list:
     * make22.f
 
 9. fix: flucton charge/baryon conservation + prevent PYTHIA crashes
-    Root causes of the 23/500 early-abort rate and the B=408, Q=172 excess in
-    Au+Au runs at ecm=8 GeV:
+    Root causes of the 23/500 early-abort rate and the B=408, Q=172 excess in Au+Au runs at ecm=8 GeV:
 
     1. Donor double-counting in cascinit.f
-    After F+N -> F promotion, the donor nucleon was only 'parked' at
-    rx=-10000 but kept its original ityp, charge and iso3.
+        After F+N -> F promotion, the donor nucleon was only 'parked' at
+        rx=-10000 but kept its original ityp, charge and iso3.
 
-    Fix: convert the donor slot into an inert, neutral photon
-    (ityp=100, iso3=0, charge=0, mass=0, p=0) parked far from the grid.
+        Fix: convert the donor slot into an inert, neutral photon
+        (ityp=100, iso3=0, charge=0, mass=0, p=0) parked far from the grid.
 
     2. Corrupt iso3 in 3-body flucton breakup in make22.f channel 67
-    The old assignment
-        i3new(1)=sign(1,iz1); i3new(2)=sign(1,iz1);
-        i3new(3)=iz1+iz2-i3new(1)-i3new(2)
-    produced i3new(3)=+4 
+        The old assignment
+            i3new(1)=sign(1,iz1); i3new(2)=sign(1,iz1);
+            i3new(3)=iz1+iz2-i3new(1)-i3new(2)
+        produced i3new(3)=+4 
 
-    This triggered the cascade of 'anndex(dec): clamp unphysical iz1', 'ch-conservation error' and ultimately the 'pdgid: Error in tablelookup' warnings.
+        This triggered the cascade of 'anndex(dec): clamp unphysical iz1', 'ch-conservation error' and ultimately the 'pdgid: Error in tablelookup' warnings.
 
-    Fix: derive the proton count from total charge
-        np = (3 + iz1+iz2)/2 
-    and assign +1 to the first np slots, -1 to the rest.  
+        Fix: derive the proton count from total charge
+            np = (3 + iz1+iz2)/2 
+        and assign +1 to the first np slots, -1 to the rest.  
 
-    Falls back to elastic if the sanity check ever fails.
+        Falls back to elastic if the sanity check ever fails.
 
     3. PYTHIA crash guard in make22.f and upmerge.f
-    When a corrupt iso3 slipped through, pdgid() returned 0, hepnam() returned an empty string, and PYINIT aborted the entire run with 'Error: unrecognized target particle' (pythia6409.f:5446).
+        When a corrupt iso3 slipped through, pdgid() returned 0, hepnam() returned an empty string, and PYINIT aborted the entire run with 'Error: unrecognized target particle' (pythia6409.f:5446).
 
-    Fix a: in make22, clear itag1/itag2 whenever |iso3| exceeds the physical range for the ityp (baryons |iz|<=3, mesons |iz|<=2) or when the particle is a flucton.
-    
-    Fix b: in upmerge/upyth, bail out and zero nstring1=nstring2=0 whenever pdgid returns 0 or hepnam returns an empty name, so the run continues instead of STOP.
+        Fix a: in make22, clear itag1/itag2 whenever |iso3| exceeds the physical range for the ityp (baryons |iz|<=3, mesons |iz|<=2) or when the particle is a flucton.
+        
+        Fix b: in upmerge/upyth, bail out and zero nstring1=nstring2=0 whenever pdgid returns 0 or hepnam returns an empty name, so the run continues instead of STOP.
 
     Files touched:
     * cascinit.f
